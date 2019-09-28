@@ -45,6 +45,7 @@ public class MainActivity extends AppCompatActivity {
     private ProcessOCR processOCR;
 
     private Bitmap originalBitmap = null;
+    private Bitmap scannable = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -69,6 +70,15 @@ public class MainActivity extends AppCompatActivity {
                 try {
                     FileOutputStream fos = new FileOutputStream(getFilesDir().getAbsolutePath() + "/" + "mrzimage.png");
                     originalBitmap.compress(Bitmap.CompressFormat.PNG, 100, fos);
+                    fos.close();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+
+
+                try {
+                    FileOutputStream fos = new FileOutputStream(getFilesDir().getAbsolutePath() + "/" + "scannable.png");
+                    scannable.compress(Bitmap.CompressFormat.PNG, 100, fos);
                     fos.close();
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -109,8 +119,10 @@ public class MainActivity extends AppCompatActivity {
 
                     originalBitmap = bitmap;
 
+                    scannable = getScannableArea(bitmap);
+
                     processOCR = new ProcessOCR();
-                    processOCR.setBitmap(bitmap);
+                    processOCR.setBitmap(scannable);
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
@@ -139,6 +151,15 @@ public class MainActivity extends AppCompatActivity {
         return bitmap;
     }
 
+    private Bitmap getScannableArea(Bitmap bitmap){
+        int top = bitmap.getHeight() * 6 / 10;
+
+        bitmap = Bitmap.createBitmap(bitmap, 0, top,
+                bitmap.getWidth(), bitmap.getHeight() - top);
+
+        return bitmap;
+    }
+
     private Bitmap rotateImage(Bitmap bitmap, int rotate){
         Log.v(TAG, "Rotation: " + rotate);
 
@@ -159,6 +180,27 @@ public class MainActivity extends AppCompatActivity {
         // Convert to ARGB_8888, required by tess
         bitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true);
         return bitmap;
+    }
+
+    /**
+     * reduces the size of the image
+     * @param image
+     * @param maxSize
+     * @return
+     */
+    public Bitmap getResizedBitmap(Bitmap image, int maxSize) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+
+        float bitmapRatio = (float)width / (float) height;
+        if (bitmapRatio > 1) {
+            width = maxSize;
+            height = (int) (width / bitmapRatio);
+        } else {
+            height = maxSize;
+            width = (int) (height * bitmapRatio);
+        }
+        return Bitmap.createScaledBitmap(image, width, height, true);
     }
 
     private class ProcessOCR extends AsyncTask {
