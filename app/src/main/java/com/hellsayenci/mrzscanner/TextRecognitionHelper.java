@@ -22,6 +22,9 @@ import android.content.Context;
 
 import com.googlecode.leptonica.android.Pixa;
 import com.googlecode.tesseract.android.TessBaseAPI;
+import com.hellsayenci.mrzscanner.mrz.MrzParser;
+import com.hellsayenci.mrzscanner.mrz.MrzRecord;
+import com.hellsayenci.mrzscanner.mrz.types.MrzFormat;
 
 /**
  * Created by jsjem on 17.11.2016.
@@ -36,14 +39,14 @@ public class TextRecognitionHelper {
 	private final Context applicationContext;
 	private final TessBaseAPI tessBaseApi;
 
-	private String REGEX_MRZ_LINE_1 = "[A-Z0-9<]{2}[A-Z<]{3}[A-Z0-9<]{39}";
-	private String REGEX_MRZ_LINE_2 = "[A-Z0-9<]{9}[0-9]{1}[A-Z<]{3}[0-9]{6}[0-9]{1}[FM<]{1}[0-9]{6}[0-9]{1}[A-Z0-9<]{14}[0-9]{1}[0-9]{1}";
-	Pattern line1Pattern = Pattern.compile(REGEX_MRZ_LINE_1);
-	Pattern line2Pattern = Pattern.compile(REGEX_MRZ_LINE_2);
+	Pattern passportLine1Pattern = Pattern.compile("[A-Z0-9<]{2}[A-Z<]{3}[A-Z0-9<]{39}");
+	Pattern passportLine2Pattern = Pattern.compile("[A-Z0-9<]{9}[0-9]{1}[A-Z<]{3}[0-9]{6}[0-9]{1}[FM<]{1}[0-9]{6}[0-9]{1}[A-Z0-9<]{14}[0-9]{1}[0-9]{1}");
+
+	private List<MrzFormat> mrzFormats = new ArrayList<>();
+
+	private static List<MrzFormat> supportedFormats = new ArrayList<>();
 
 	private OnMRZScanned listener;
-
-	private HashMap<String, Integer> scanResults = new HashMap<>();
 
 	/**
 	 * Constructor.
@@ -56,6 +59,17 @@ public class TextRecognitionHelper {
 		this.tessBaseApi = new TessBaseAPI();
 		this.TESSERACT_PATH = context.getFilesDir().getAbsolutePath() + "/";
 		prepareTesseract("ocrb");
+
+		mrzFormats.add(MrzFormat.PASSPORT);
+		mrzFormats.add(MrzFormat.MRTD_TD2);
+		mrzFormats.add(MrzFormat.SLOVAK_ID_234);
+		mrzFormats.add(MrzFormat.MRTD_TD1);
+
+		supportedFormats.add(MrzFormat.PASSPORT);
+		supportedFormats.add(MrzFormat.SLOVAK_ID_234);
+		supportedFormats.add(MrzFormat.MRTD_TD2);
+		supportedFormats.add(MrzFormat.FRENCH_ID);
+		supportedFormats.add(MrzFormat.MRTD_TD1);
 	}
 
 	/**
@@ -126,33 +140,77 @@ public class TextRecognitionHelper {
 	 *
 	 * @return Recognized text string.
 	 */
-	public String doOCR() {
+	public void doOCR() {
 		String text = tessBaseApi.getUTF8Text();
 		Log.v(TAG, "OCRED TEXT: " + text);
 		checkMRZ(text);
-		return tessBaseApi.getUTF8Text();
 	}
 
 	public void checkMRZ(String txt){
-		Matcher line1Matcher = line1Pattern.matcher(txt);
-		Matcher line2Matcher = line2Pattern.matcher(txt);
+		final String mrzText = preProcessText(txt);
 
-		if (line1Matcher.find() && line2Matcher.find()) {
-			final String mrzText = line1Matcher.group(0) + "\n" + line2Matcher.group(0);
-			int count = scanResults.containsKey(mrzText) ? scanResults.get(mrzText) : 0;
-			Log.e("Found MRZ Count " + (count + 1), mrzText);
-			//If the same MRZ scanned more than once, than call the listener
-			if(count > 0) {
-				new Handler(Looper.getMainLooper()).post(new Runnable() {
-					@Override
-					public void run() {
-						listener.onScanned(mrzText);
+		if(mrzText != null) {
+			Log.i("Found possible MRZ", mrzText);
+			try {
+				MrzRecord mrzRecord = MrzParser.parse(mrzText);
+				if(mrzRecord != null) {
+					if(supportedFormats.contains(mrzRecord.format)) {
+						boolean additionalPassportCheckOK = true;
+						if(mrzRecord.format == MrzFormat.PASSPORT){
+							if(!passportLine1Pattern.matcher(mrzText).find()
+							|| !passportLine2Pattern.matcher(mrzText).find())
+								additionalPassportCheckOK = false;
+						}
+
+						if(additionalPassportCheckOK) {
+							new Handler(Looper.getMainLooper()).post(new Runnable() {
+								@Override
+								public void run() {
+									listener.onScanned(mrzText);
+								}
+							});
+							return;
+						}
 					}
-				});
-				return;
+				}
+			} catch (Exception e){
+				Log.i("MRZ Parser", "Failed");
 			}
-			scanResults.put(mrzText, count + 1);
 		}
+	}
+
+	private String preProcessText(String txt) {
+		String[] lines = txt.split("\n");
+		if(lines == null || lines.length < 1)
+			return null;
+		for(MrzFormat mrzFormat : mrzFormats) {
+			for (int i = lines.length - 1; i >= 0; i--) {
+				String line2 = lines[i].replace(" ", "");
+				if(line2.length() >= mrzFormat.columns){
+					if(i == 0)
+						break;
+					String line1 = lines[i - 1].replace(" ", "");
+					if(line1.length() >= mrzFormat.columns)
+						if(mrzFormat.rows == 2)
+							return line1.substring(0, mrzFormat.columns) + "\n" +
+									line2.substring(0, mrzFormat.columns);
+						else if(mrzFormat.rows == 3){
+							if(lines.length < 2 || i < 1)
+								break;
+							String line0 = lines[i - 2].replace(" ", "");
+							if(line0.length() >= mrzFormat.columns)
+								return line0.substring(0, mrzFormat.columns) + "\n" +
+										line1.substring(0, mrzFormat.columns) + "\n" +
+										line2.substring(0, mrzFormat.columns);
+							else
+								break;
+						}
+					else
+						break;
+				}
+			}
+		}
+		return null;
 	}
 
 	/**

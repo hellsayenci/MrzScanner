@@ -83,7 +83,7 @@ public class MainActivity extends AppCompatActivity {
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
-                Log.e("MRZ", mrzText);
+                Log.e("Found MRZ", mrzText);
                 camera.removeFrameProcessor(frameProcessor);
 
                 new AlertDialog.Builder(MainActivity.this)
@@ -91,7 +91,8 @@ public class MainActivity extends AppCompatActivity {
                         .setMessage(mrzText)
                         .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
                             public void onClick(DialogInterface dialog, int which) {
-                                // Continue with delete operation
+                                processing.set(false);
+                                camera.addFrameProcessor(frameProcessor);
                             }
                         })
                         .show();
@@ -152,7 +153,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private Bitmap getScannableArea(Bitmap bitmap){
-        int top = bitmap.getHeight() * 6 / 10;
+        int top = bitmap.getHeight() * 4 / 10;
 
         bitmap = Bitmap.createBitmap(bitmap, 0, top,
                 bitmap.getWidth(), bitmap.getHeight() - top);
